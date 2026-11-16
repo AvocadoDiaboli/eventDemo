@@ -20,14 +20,26 @@
             flex-direction: column;
             overflow: hidden;
         }
+        /* Header Layout: Logo on the left, Title next to it */
+        .header-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #30363d;
+            padding-bottom: 15px;
+        }
+        .logo {
+            height: 65px; /* Adjust height as needed to fit nicely */
+            width: auto;
+            object-fit: contain;
+        }
         h1 {
             font-size: 36px;
-            margin-bottom: 25px;
             color: #58a6ff;
             text-transform: uppercase;
             letter-spacing: 2px;
-            border-bottom: 2px solid #30363d;
-            padding-bottom: 15px;
+            margin: 0;
         }
         .table-container {
             flex: 1;
@@ -63,7 +75,6 @@
         tr:nth-child(even) {
             background-color: rgba(22, 27, 34, 0.4);
         }
-        /* Color highlight for ongoing/multi-day events (without badge text) */
         .ongoing-row {
             background-color: rgba(31, 111, 235, 0.15) !important;
             border-left: 6px solid #1f6feb;
@@ -84,7 +95,11 @@
 </head>
 <body>
 
-    <h1>Kommende Veranstaltungen</h1>
+    <!-- Header containing the logo on the left and title -->
+    <div class="header-container">
+        <img src="logo.png" alt="Stadt Chur Polizei Logo" class="logo">
+        <h1>Kommende Veranstaltungen</h1>
+    </div>
     
     <div class="table-container">
         <table>
@@ -222,10 +237,6 @@
                     return ev.endDateObj >= today;
                 });
 
-                // Sorting rules:
-                // 1. Ongoing multi-day/today events take absolute priority at the top.
-                // 2. If start dates match (or both are ongoing), sort chronologically by start date.
-                // 3. If start dates are identical, sort secondary by time string.
                 activeOrFuture.sort((a, b) => {
                     if (a.isOngoing && !b.isOngoing) return -1;
                     if (!a.isOngoing && b.isOngoing) return 1;
@@ -234,7 +245,6 @@
                         return a.startDateObj - b.startDateObj;
                     }
 
-                    // Secondary sort by time if dates are identical
                     return a.timeString.localeCompare(b.timeString, 'de', { numeric: true });
                 });
 
