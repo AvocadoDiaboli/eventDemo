@@ -122,21 +122,15 @@
         // HIER DEN VERÖFFENTLICHTEN GOOGLE SHEETS CSV-LINK EINFÜGEN
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ--Ad6bot2cV0r_jpQlJeLFk2Sf5M7-FiP6mE0SWzWz3n4NaUYTl_1_MMzzuvrfOY-ZPqlTI2ygUSi/pubhtml?gid=0&single=true';
 
-        // Formats YYYY-MM-DD (or standard date strings) to DD.MM.YYYY
         function formatDateGerman(dateStr) {
             if (!dateStr) return '';
             const parts = dateStr.trim().split('-');
             if (parts.length === 3) {
-                const year = parts[0];
-                const month = parts[1].padStart(2, '0');
-                const day = parts[2].padStart(2, '0');
-                return `${day}.${month}.${year}`;
+                return `${parts[2].padStart(2, '0')}.${parts[1].padStart(2, '0')}.${parts[0]}`;
             }
-            // Fallback if already formatted or different separator
             return dateStr;
         }
 
-        // Safely parses YYYY-MM-DD in local time without timezone shift issues
         function parseLocalDate(dateStr) {
             if (!dateStr) return null;
             const parts = dateStr.trim().split('-');
@@ -148,7 +142,6 @@
             return d;
         }
 
-        // Simple CSV parser handling quoted fields
         function parseCSV(text) {
             let lines = text.split('\n').filter(line => line.trim() !== '');
             if (lines.length === 0) return [];
@@ -199,6 +192,7 @@
                 today.setHours(0, 0, 0, 0);
 
                 let processedEvents = rawEvents.map(ev => {
+                    // Mapping matches the exact English header names in Row 1 of your Google Sheet
                     let startDate = parseLocalDate(ev.StartDate);
                     let endDate = parseLocalDate(ev.EndDate || ev.StartDate);
 
@@ -224,19 +218,15 @@
                     };
                 });
 
-                // Filter out completed events
                 let activeOrFuture = processedEvents.filter(ev => ev.endDateObj && ev.endDateObj >= today);
 
-                // Sort: Ongoing multi-day events first, then upcoming chronologically
                 activeOrFuture.sort((a, b) => {
                     if (a.isOngoing && !b.isOngoing) return -1;
                     if (!a.isOngoing && b.isOngoing) return 1;
                     return a.startDateObj - b.startDateObj;
                 });
 
-                // Limit strictly to 6 rows
                 let top6Rows = activeOrFuture.slice(0, 6);
-
                 let tbody = document.getElementById('event-table-body');
                 
                 if (top6Rows.length === 0) {
@@ -268,26 +258,16 @@
             }
         }
 
-        // Run on page load
         fetchAndRenderEvents();
-
-        // Auto-refresh every 15 minutes
         setInterval(fetchAndRenderEvents, 15 * 60 * 1000);
 
-        // Midnight auto-refresh guard
         function scheduleMidnightRefresh() {
             const now = new Date();
-            const night = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate() + 1,
-                0, 0, 0
-            );
-            const timeToMidnight = night.getTime() - now.getTime();
+            const night = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
             setTimeout(() => {
                 fetchAndRenderEvents();
                 scheduleMidnightRefresh();
-            }, timeToMidnight);
+            }, night.getTime() - now.getTime());
         }
         scheduleMidnightRefresh();
     </script>
