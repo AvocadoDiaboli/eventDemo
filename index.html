@@ -53,19 +53,16 @@
             font-size: 20px;
             letter-spacing: 1px;
         }
-        /* First 3 columns shrink to hug their content cleanly */
         th.col-fit, td.col-fit {
             width: 1%;
             white-space: nowrap;
         }
-        /* Last column absorbs all remaining width */
         th.col-expand, td.col-expand {
             width: auto;
         }
         tr:nth-child(even) {
             background-color: rgba(22, 27, 34, 0.4);
         }
-        /* Highlight for ongoing/multi-day events */
         .ongoing-row {
             background-color: rgba(31, 111, 235, 0.15) !important;
             border-left: 6px solid #1f6feb;
@@ -124,37 +121,53 @@
 
         function formatDateGerman(dateStr) {
             if (!dateStr) return '';
-            const parts = dateStr.trim().split('-');
+            const cleaned = dateStr.trim();
+            const parts = cleaned.split('-');
             if (parts.length === 3) {
                 return `${parts[2].padStart(2, '0')}.${parts[1].padStart(2, '0')}.${parts[0]}`;
             }
-            return dateStr;
+            return cleaned;
         }
 
         function parseLocalDate(dateStr) {
             if (!dateStr) return null;
-            const parts = dateStr.trim().split('-');
+            const cleaned = dateStr.trim();
+            const parts = cleaned.split('-');
             if (parts.length === 3) {
-                return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const d = parseInt(parts[2], 10);
+                return new Date(y, m, d, 0, 0, 0, 0);
             }
-            const d = new Date(dateStr);
+            // Fallback for other standard date formats
+            const d = new Date(cleaned);
+            if (isNaN(d.getTime())) return null;
             d.setHours(0, 0, 0, 0);
             return d;
         }
 
         function parseCSV(text) {
-            let lines = text.split('\n').filter(line => line.trim() !== '');
+            // Strip invisible BOM characters from UTF-8 CSVs exported by Google Sheets
+            let cleanText = text.replace(/^\uFEFF/, '');
+            let lines = cleanText.split(/\r?\n/).filter(line => line.trim() !== '');
             if (lines.length === 0) return [];
 
             let headers = parseCSVLine(lines[0]);
-            let result = [];
+            // Clean invisible BOM or quotes off the first header key just in case
+            if (headers.length > 0) {
+                headers[0] = headers[0].replace(/^\uFEFF/, '').trim();
+            }
+            
+            console.log("Parsed CSV Headers:", headers); // Visible in F12 console
 
+            let result = [];
             for (let i = 1; i < lines.length; i++) {
                 let currentLine = parseCSVLine(lines[i]);
-                if (currentLine.length === headers.length) {
+                if (currentLine.length > 0 && currentLine.some(val => val !== '')) {
                     let obj = {};
                     for (let j = 0; j < headers.length; j++) {
-                        obj[headers[j].trim()] = currentLine[j].trim();
+                        let key = headers[j] ? headers[j].trim() : `col_${j}`;
+                        obj[key] = currentLine[j] ? currentLine[j].trim() : '';
                     }
                     result.push(obj);
                 }
@@ -185,44 +198,58 @@
             try {
                 const separator = CSV_URL.includes('?') ? '&' : '?';
                 const response = await fetch(CSV_URL + separator + 'cacheBust=' + new Date().getTime());
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
                 const csvData = await response.text();
                 const rawEvents = parseCSV(csvData);
+                console.log("Raw Events Extracted:", rawEvents); // Check browser console
 
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
                 let processedEvents = rawEvents.map(ev => {
-                    // Mapping matches the exact English header names in Row 1 of your Google Sheet
-                    let startDate = parseLocalDate(ev.StartDate);
-                    let endDate = parseLocalDate(ev.EndDate || ev.StartDate);
+                    let startStr = ev.StartDate || ev.startdate || ev.Start_Date || '';
+                    let endStr = ev.EndDate || ev.enddate || ev.End_Date || startStr;
 
-                    let isOngoing = (startDate <= today && endDate >= today);
-                    let isFuture = (startDate > today);
+                    let startDate = parseLocalDate(startStr);
+                    let endDate = parseLocalDate(endStr);
+                    if (!endDate && startDate) endDate = startDate;
 
-                    let formattedStart = formatDateGerman(ev.StartDate);
-                    let formattedEnd = formatDateGerman(ev.EndDate);
+                    // Fallback safety if date parsing fails so rows don't completely vanish
+                    let isOngoing = false;
+                    if (startDate && endDate) {
+                        isOngoing = (startDate <= today && endDate >= today);
+                    }
 
-                    let dateDisplay = (!ev.EndDate || ev.StartDate === ev.EndDate)
+                    let formattedStart = formatDateGerman(startStr);
+                    let formattedEnd = formatDateGerman(endStr);
+
+                    let dateDisplay = (!endStr || startStr === endStr)
                         ? formattedStart
                         : `${formattedStart} – ${formattedEnd}`;
 
                     return {
                         startDateObj: startDate,
                         endDateObj: endDate,
-                        dateString: dateDisplay,
-                        timeString: ev.TimeString || '',
-                        name: ev.EventName || '',
-                        location: ev.Location || '',
-                        isOngoing,
-                        isFuture
+                        dateString: dateDisplay || startStr,
+                        timeString: ev.TimeString || ev.time || ev.Time || '',
+                        name: ev.EventName || ev.name || ev.Event || '',
+                        location: ev.Location || ev.location || ev.Ort || '',
+                        isOngoing
                     };
                 });
 
-                let activeOrFuture = processedEvents.filter(ev => ev.endDateObj && ev.endDateObj >= today);
+                // Filter: keep events whose end date is today or in the future, OR events with missing dates as a fallback
+                let activeOrFuture = processedEvents.filter(ev => {
+                    if (!ev.endDateObj) return true; // keep if date couldn't parse so it's visible for debugging
+                    return ev.endDateObj >= today;
+                });
 
+                // Sort: Ongoing first, then upcoming start dates
                 activeOrFuture.sort((a, b) => {
                     if (a.isOngoing && !b.isOngoing) return -1;
                     if (!a.isOngoing && b.isOngoing) return 1;
+                    if (!a.startDateObj || !b.startDateObj) return 0;
                     return a.startDateObj - b.startDateObj;
                 });
 
@@ -254,7 +281,7 @@
 
             } catch (error) {
                 console.error('Fehler beim Laden der Veranstaltungen:', error);
-                document.getElementById('event-table-body').innerHTML = `<tr><td colspan="4" class="no-events" style="color:#f85149;">Fehler beim Laden der Veranstaltungsdaten. Verbindung oder CSV-Link prüfen.</td></tr>`;
+                document.getElementById('event-table-body').innerHTML = `<tr><td colspan="4" class="no-events" style="color:#f85149;">Fehler beim Laden. Siehe Browser-Konsole (F12).</td></tr>`;
             }
         }
 
