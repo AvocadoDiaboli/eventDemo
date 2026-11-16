@@ -14,7 +14,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #0d1117;
             color: #ffffff;
-            padding: 30px 40px;
+            padding: 25px 40px;
             height: 100vh;
             display: flex;
             flex-direction: column;
@@ -51,17 +51,15 @@
             width: 100%;
             height: 100%;
             border-collapse: collapse;
-            table-layout: fixed; /* Ensures column rules and widths are respected */
+            table-layout: auto; /* Lets columns naturally adapt to their content */
         }
         tr {
             border-bottom: 1px solid #30363d;
         }
         th, td {
-            padding: 10px 24px;
+            padding: 0 24px; /* Generous horizontal padding */
             text-align: left;
             vertical-align: middle;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
         th {
             background-color: #161b22;
@@ -70,19 +68,15 @@
             text-transform: uppercase;
             font-size: 22px;
             letter-spacing: 1px;
-            height: 60px;
+            height: 55px;
         }
         td {
             font-size: 32px; 
+            white-space: nowrap; /* Keeps Datum, Zeit, and Veranstaltung on a clean single line */
         }
-        /* Columns 1, 2, 3 hug their content naturally */
-        th.col-fit, td.col-fit {
-            width: 1%;
-            white-space: nowrap;
-        }
-        /* Column 4 (Location) takes all remaining space */
-        th.col-expand, td.col-expand {
-            width: auto;
+        /* The last column (Ort) can expand and wrap if needed */
+        td.col-expand {
+            white-space: normal;
         }
         tr:nth-child(even) {
             background-color: rgba(22, 27, 34, 0.4);
@@ -95,6 +89,7 @@
             text-align: center;
             font-size: 32px;
             color: #8b949e;
+            white-space: normal !important;
         }
         .footer-status {
             margin-top: 10px;
@@ -116,10 +111,10 @@
         <table>
             <thead>
                 <tr>
-                    <th class="col-fit">Datum</th>
-                    <th class="col-fit">Zeit</th>
-                    <th class="col-fit">Veranstaltung</th>
-                    <th class="col-expand">Ort</th>
+                    <th>Datum</th>
+                    <th>Zeit</th>
+                    <th>Veranstaltung</th>
+                    <th>Ort</th>
                 </tr>
             </thead>
             <tbody id="event-table-body">
@@ -266,7 +261,7 @@
                     return;
                 }
 
-                // Dynamically calculate row height to perfectly fill the vertical screen space
+                // Dynamically distribute row heights evenly to fill the screen vertically
                 let rowHeightPercent = (100 / 6).toFixed(2);
 
                 let html = '';
@@ -275,9 +270,9 @@
                     
                     html += `
                         <tr ${rowClass} style="height: ${rowHeightPercent}%;">
-                            <td class="col-fit">${ev.dateString}</td>
-                            <td class="col-fit">${ev.timeString}</td>
-                            <td class="col-fit">${ev.name}</td>
+                            <td>${ev.dateString}</td>
+                            <td>${ev.timeString}</td>
+                            <td>${ev.name}</td>
                             <td class="col-expand">${ev.location}</td>
                         </tr>
                     `;
