@@ -63,21 +63,10 @@
         tr:nth-child(even) {
             background-color: rgba(22, 27, 34, 0.4);
         }
+        /* Color highlight for ongoing/multi-day events (without badge text) */
         .ongoing-row {
             background-color: rgba(31, 111, 235, 0.15) !important;
             border-left: 6px solid #1f6feb;
-        }
-        .badge {
-            display: inline-block;
-            background-color: #1f6feb;
-            color: white;
-            font-size: 16px;
-            padding: 4px 10px;
-            border-radius: 4px;
-            margin-left: 12px;
-            vertical-align: middle;
-            text-transform: uppercase;
-            letter-spacing: 1px;
         }
         .no-events {
             text-align: center;
@@ -134,45 +123,12 @@
             const cleaned = dateStr.trim();
             const parts = cleaned.split('-');
             if (parts.length === 3) {
-                const y = parseInt(parts[0], 10);
-                const m = parseInt(parts[1], 10) - 1;
-                const d = parseInt(parts[2], 10);
-                return new Date(y, m, d, 0, 0, 0, 0);
+                return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
             }
-            // Fallback for other standard date formats
             const d = new Date(cleaned);
             if (isNaN(d.getTime())) return null;
             d.setHours(0, 0, 0, 0);
             return d;
-        }
-
-        function parseCSV(text) {
-            // Strip invisible BOM characters from UTF-8 CSVs exported by Google Sheets
-            let cleanText = text.replace(/^\uFEFF/, '');
-            let lines = cleanText.split(/\r?\n/).filter(line => line.trim() !== '');
-            if (lines.length === 0) return [];
-
-            let headers = parseCSVLine(lines[0]);
-            // Clean invisible BOM or quotes off the first header key just in case
-            if (headers.length > 0) {
-                headers[0] = headers[0].replace(/^\uFEFF/, '').trim();
-            }
-            
-            console.log("Parsed CSV Headers:", headers); // Visible in F12 console
-
-            let result = [];
-            for (let i = 1; i < lines.length; i++) {
-                let currentLine = parseCSVLine(lines[i]);
-                if (currentLine.length > 0 && currentLine.some(val => val !== '')) {
-                    let obj = {};
-                    for (let j = 0; j < headers.length; j++) {
-                        let key = headers[j] ? headers[j].trim() : `col_${j}`;
-                        obj[key] = currentLine[j] ? currentLine[j].trim() : '';
-                    }
-                    result.push(obj);
-                }
-            }
-            return result;
         }
 
         function parseCSVLine(text) {
@@ -201,21 +157,43 @@
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 
                 const csvData = await response.text();
-                const rawEvents = parseCSV(csvData);
-                console.log("Raw Events Extracted:", rawEvents); // Check browser console
+
+                if (csvData.trim().toLowerCase().startsWith('<!doctype') || csvData.includes('<html')) {
+                    document.getElementById('event-table-body').innerHTML = `
+                        <tr><td colspan="4" class="no-events" style="color:#f85149; font-size:22px;">
+                            Fehler: Der Link liefert eine HTML-Webseite statt einer CSV-Datei.<br>
+                            <span style="font-size:18px; color:#8b949e;">Bitte in Google Tabellen auf "Datei -> Freigabe -> Im Web veröffentlichen -> Komma-getrennte Werte (.csv)" stellen.</span>
+                        </td></tr>`;
+                    return;
+                }
+
+                let cleanText = csvData.replace(/^\uFEFF/, '');
+                let lines = cleanText.split(/\r?\n/).filter(line => line.trim() !== '');
+                
+                if (lines.length <= 1) {
+                    document.getElementById('event-table-body').innerHTML = `<tr><td colspan="4" class="no-events">Keine Zeilen im Google Sheet gefunden.</td></tr>`;
+                    return;
+                }
 
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
-                let processedEvents = rawEvents.map(ev => {
-                    let startStr = ev.StartDate || ev.startdate || ev.Start_Date || '';
-                    let endStr = ev.EndDate || ev.enddate || ev.End_Date || startStr;
+                let processedEvents = [];
+
+                for (let i = 1; i < lines.length; i++) {
+                    let cols = parseCSVLine(lines[i]);
+                    if (cols.length < 4) continue;
+
+                    let startStr = cols[0] || '';
+                    let endStr = cols[1] || startStr;
+                    let timeStr = cols[2] || '';
+                    let nameStr = cols[3] || '';
+                    let locStr = cols[4] || '';
 
                     let startDate = parseLocalDate(startStr);
                     let endDate = parseLocalDate(endStr);
                     if (!endDate && startDate) endDate = startDate;
 
-                    // Fallback safety if date parsing fails so rows don't completely vanish
                     let isOngoing = false;
                     if (startDate && endDate) {
                         isOngoing = (startDate <= today && endDate >= today);
@@ -228,29 +206,36 @@
                         ? formattedStart
                         : `${formattedStart} – ${formattedEnd}`;
 
-                    return {
+                    processedEvents.push({
                         startDateObj: startDate,
                         endDateObj: endDate,
                         dateString: dateDisplay || startStr,
-                        timeString: ev.TimeString || ev.time || ev.Time || '',
-                        name: ev.EventName || ev.name || ev.Event || '',
-                        location: ev.Location || ev.location || ev.Ort || '',
+                        timeString: timeStr,
+                        name: nameStr,
+                        location: locStr,
                         isOngoing
-                    };
-                });
+                    });
+                }
 
-                // Filter: keep events whose end date is today or in the future, OR events with missing dates as a fallback
                 let activeOrFuture = processedEvents.filter(ev => {
-                    if (!ev.endDateObj) return true; // keep if date couldn't parse so it's visible for debugging
+                    if (!ev.endDateObj) return true;
                     return ev.endDateObj >= today;
                 });
 
-                // Sort: Ongoing first, then upcoming start dates
+                // Sorting rules:
+                // 1. Ongoing multi-day/today events take absolute priority at the top.
+                // 2. If start dates match (or both are ongoing), sort chronologically by start date.
+                // 3. If start dates are identical, sort secondary by time string.
                 activeOrFuture.sort((a, b) => {
                     if (a.isOngoing && !b.isOngoing) return -1;
                     if (!a.isOngoing && b.isOngoing) return 1;
-                    if (!a.startDateObj || !b.startDateObj) return 0;
-                    return a.startDateObj - b.startDateObj;
+
+                    if (a.startDateObj && b.startDateObj && a.startDateObj.getTime() !== b.startDateObj.getTime()) {
+                        return a.startDateObj - b.startDateObj;
+                    }
+
+                    // Secondary sort by time if dates are identical
+                    return a.timeString.localeCompare(b.timeString, 'de', { numeric: true });
                 });
 
                 let top6Rows = activeOrFuture.slice(0, 6);
@@ -264,13 +249,12 @@
                 let html = '';
                 top6Rows.forEach(ev => {
                     let rowClass = ev.isOngoing ? 'class="ongoing-row"' : '';
-                    let badgeHtml = ev.isOngoing ? '<span class="badge">Aktuell</span>' : '';
                     
                     html += `
                         <tr ${rowClass}>
                             <td class="col-fit">${ev.dateString}</td>
                             <td class="col-fit">${ev.timeString}</td>
-                            <td class="col-fit">${ev.name}${badgeHtml}</td>
+                            <td class="col-fit">${ev.name}</td>
                             <td class="col-expand">${ev.location}</td>
                         </tr>
                     `;
@@ -280,8 +264,8 @@
                 document.getElementById('last-updated').innerText = `Zuletzt aktualisiert: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`;
 
             } catch (error) {
-                console.error('Fehler beim Laden der Veranstaltungen:', error);
-                document.getElementById('event-table-body').innerHTML = `<tr><td colspan="4" class="no-events" style="color:#f85149;">Fehler beim Laden. Siehe Browser-Konsole (F12).</td></tr>`;
+                console.error('Fehler beim Laden:', error);
+                document.getElementById('event-table-body').innerHTML = `<tr><td colspan="4" class="no-events" style="color:#f85149;">Fehler beim Laden der CSV-Daten.</td></tr>`;
             }
         }
 
