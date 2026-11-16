@@ -20,7 +20,6 @@
             flex-direction: column;
             overflow: hidden;
         }
-        /* Header Layout: Logo on the left, Title next to it */
         .header-container {
             display: flex;
             align-items: center;
@@ -31,7 +30,7 @@
             flex-shrink: 0;
         }
         .logo {
-            height: 120px; /* Doubled in size from 60px */
+            height: 120px;
             width: auto;
             object-fit: contain;
         }
@@ -42,7 +41,6 @@
             letter-spacing: 2px;
             margin: 0;
         }
-        /* Table container expands to fill remaining vertical screen space */
         .table-container {
             flex: 1;
             display: flex;
@@ -53,30 +51,17 @@
             width: 100%;
             height: 100%;
             border-collapse: collapse;
-            table-layout: auto;
-            display: flex;
-            flex-direction: column;
-        }
-        thead {
-            flex-shrink: 0;
-        }
-        tbody {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
+            table-layout: fixed; /* Ensures column rules and widths are respected */
         }
         tr {
-            display: flex;
-            width: 100%;
             border-bottom: 1px solid #30363d;
-            flex: 1; /* Distributes rows evenly to fill vertical space */
-            align-items: center;
         }
         th, td {
             padding: 10px 24px;
             text-align: left;
-            display: flex;
-            align-items: center;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         th {
             background-color: #161b22;
@@ -87,17 +72,17 @@
             letter-spacing: 1px;
             height: 60px;
         }
-        /* Larger text size for table content */
         td {
             font-size: 32px; 
         }
+        /* Columns 1, 2, 3 hug their content naturally */
         th.col-fit, td.col-fit {
             width: 1%;
             white-space: nowrap;
-            flex: 0 0 auto;
         }
+        /* Column 4 (Location) takes all remaining space */
         th.col-expand, td.col-expand {
-            flex: 1 1 auto;
+            width: auto;
         }
         tr:nth-child(even) {
             background-color: rgba(22, 27, 34, 0.4);
@@ -107,10 +92,9 @@
             border-left: 6px solid #1f6feb;
         }
         .no-events {
-            justify-content: center;
+            text-align: center;
             font-size: 32px;
             color: #8b949e;
-            width: 100% !important;
         }
         .footer-status {
             margin-top: 10px;
@@ -278,16 +262,19 @@
                 let tbody = document.getElementById('event-table-body');
                 
                 if (top6Rows.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="4" class="no-events">Keine bevorstehenden Veranstaltungen geplant.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="4" class="no-events" style="height:100%;">Keine bevorstehenden Veranstaltungen geplant.</td></tr>`;
                     return;
                 }
+
+                // Dynamically calculate row height to perfectly fill the vertical screen space
+                let rowHeightPercent = (100 / 6).toFixed(2);
 
                 let html = '';
                 top6Rows.forEach(ev => {
                     let rowClass = ev.isOngoing ? 'class="ongoing-row"' : '';
                     
                     html += `
-                        <tr ${rowClass}>
+                        <tr ${rowClass} style="height: ${rowHeightPercent}%;">
                             <td class="col-fit">${ev.dateString}</td>
                             <td class="col-fit">${ev.timeString}</td>
                             <td class="col-fit">${ev.name}</td>
